@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Geoportal de Seguimiento de Minería Ilegal en ANP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #e5e7eb;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .container {
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 40px;
+      width: 90%;
+      max-width: 480px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    }
+    
+    h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+      color: #93c5fd;
+      text-align: center;
+    }
+    
+    .subtitle {
+      font-size: 14px;
+      color: #94a3b8;
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    
+    label {
+      display: block;
+      font-size: 13px;
+      color: #cbd5e1;
+      margin-bottom: 6px;
+      margin-top: 16px;
+    }
+    
+    select, input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      background: #0f172a;
+      color: #e5e7eb;
+      font-size: 14px;
+    }
+    
+    select:focus, input:focus {
+      outline: none;
+      border-color: #2563eb;
+    }
+    
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 32px;
+    }
+    
+    button {
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .btn-deteccion {
+      background: #2563eb;
+      color: white;
+    }
+    
+    .btn-deteccion:hover {
+      background: #1d4ed8;
+    }
+    
+    .btn-operativo {
+      background: #0ea5e9;
+      color: white;
+    }
+    
+    .btn-operativo:hover {
+      background: #0284c7;
+    }
+    
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .msg {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      text-align: center;
+    }
+    
+    .msg.error {
+      background: #7f1d1d;
+      color: #fecaca;
+    }
+    
+    .msg.success {
+      background: #064e3b;
+      color: #6ee7b7;
+    }
+    
+    .info {
+      background: #111827;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 24px;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    
+    .info strong {
+      color: #cbd5e1;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>🗺️ Geoportal de Seguimiento de Minería Ilegal en ANP</h1>
+  <div class="subtitle">Sistema de Detección y Operativos</div>
+  
+  <label for="anpSelect">Área Natural Protegida</label>
+  <select id="anpSelect">
+    <option value="">— Cargando ANP —</option>
+  </select>
+  
+  <label for="usuario">Usuario</label>
+  <input type="email" id="usuario" placeholder="correo@sernanp.gob.pe">
+  
+  <label for="clave">Contraseña</label>
+  <input type="password" id="clave" placeholder="Ingrese su contraseña">
+  
+  <div class="btn-group">
+    <button class="btn-deteccion" id="btnDeteccion" disabled>
+      📍 Detección
+    </button>
+    <button class="btn-operativo" id="btnOperativo" disabled>
+      🎯 Operativos
+    </button>
+  </div>
+  
+  <div id="msg" class="msg" style="display: none;"></div>
+  
+  <div class="info">
+    <strong>Instrucciones:</strong><br>
+    1. Seleccione el ANP con la que trabajará<br>
+    2. Ingrese sus credenciales<br>
+    3. Elija el módulo: Detección u Operativos
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+const SUPABASE_URL = "https://tewrzarmckrztcrmgfjo.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRld3J6YXJtY2tyenRjcm1nZmpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE0ODQ3NTksImV4cCI6MjA3NzA2MDc1OX0.xeQnYEVAV_eIy7zVxFU9W2Fd0xjuF4v-tQjM2REPtCc";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Credenciales válidas
+const VALID_USER = "rramireze@sernanp.gob.pe";
+const VALID_PASS = "richarramirez";
+
+// Elementos DOM
+const anpSelect = document.getElementById('anpSelect');
+const usuario = document.getElementById('usuario');
+const clave = document.getElementById('clave');
+const btnDeteccion = document.getElementById('btnDeteccion');
+const btnOperativo = document.getElementById('btnOperativo');
+const msgDiv = document.getElementById('msg');
+
+// Cargar ANPs
+async function cargarANPs() {
+  try {
+    // 1) Vista principal
+    let data = null, error = null;
+
+    ({ data, error } = await supabase
+      .from("v_anp_selector")
+      .select("anp_cod, anp_nomb")
+      .order("anp_nomb", { ascending: true }));
+
+    // 2) (Opcional) vista segura si existe en tu proyecto
+    if (error) {
+      ({ data, error } = await supabase
+        .from("v_anp_selector_secure")
+        .select("anp_cod, anp_nomb")
+        .order("anp_nomb", { ascending: true }));
+    }
+
+    // 3) Fallback a tabla base
+    if (error) {
+      ({ data, error } = await supabase
+        .from("anp_mineria_ilegal")
+        .select("anp_cod, anp_nomb")
+        .order("anp_nomb", { ascending: true }));
+    }
+
+    if (error) throw error;
+
+    anpSelect.innerHTML = '<option value="">— Seleccione ANP —</option>';
+    const seen = new Set();
+    (data || []).forEach(r => {
+      if (!r.anp_cod || seen.has(r.anp_cod)) return;
+      seen.add(r.anp_cod);
+
+      const option = document.createElement('option');
+      option.value = r.anp_cod;
+      option.textContent = r.anp_nomb || r.anp_cod;
+      anpSelect.appendChild(option);
+    });
+  } catch (e) {
+    anpSelect.innerHTML = '<option value="">— Error cargando ANP —</option>';
+    mostrarMensaje('Error al cargar las ANP: ' + (e?.message || e), true);
+  }
+}
+
+
+// Validar formulario
+function validarFormulario() {
+  const anpValido = anpSelect.value !== '';
+  const usuarioValido = usuario.value.trim() !== '';
+  const claveValida = clave.value.trim() !== '';
+  
+  const habilitado = anpValido && usuarioValido && claveValida;
+  btnDeteccion.disabled = !habilitado;
+  btnOperativo.disabled = !habilitado;
+}
+
+// Mostrar mensaje
+function mostrarMensaje(texto, esError = false) {
+  msgDiv.textContent = texto;
+  msgDiv.className = 'msg ' + (esError ? 'error' : 'success');
+  msgDiv.style.display = 'block';
+  
+  setTimeout(() => {
+    msgDiv.style.display = 'none';
+  }, 4000);
+}
+
+// Validar credenciales
+function validarCredenciales() {
+  const usuarioVal = usuario.value.trim();
+  const claveVal = clave.value.trim();
+  
+  if (usuarioVal !== VALID_USER || claveVal !== VALID_PASS) {
+    mostrarMensaje('Usuario o contraseña incorrectos', true);
+    return false;
+  }
+  
+  return true;
+}
+
+// Redirigir a módulo
+function redirigirA(modulo) {
+  if (!validarCredenciales()) return;
+  
+  const anpCod = anpSelect.value;
+  const anpNombre = anpSelect.options[anpSelect.selectedIndex].text;
+  
+  // Guardar en sessionStorage
+  sessionStorage.setItem('anp_cod', anpCod);
+  sessionStorage.setItem('anp_nombre', anpNombre);
+  sessionStorage.setItem('usuario', usuario.value.trim());
+  
+  // Redirigir
+  if (modulo === 'deteccion') {
+    window.location.href = 'deteccion.html';
+  } else {
+    window.location.href = 'operativo.html';
+  }
+}
+
+// Event listeners
+anpSelect.addEventListener('change', validarFormulario);
+usuario.addEventListener('input', validarFormulario);
+clave.addEventListener('input', validarFormulario);
+
+btnDeteccion.addEventListener('click', () => redirigirA('deteccion'));
+btnOperativo.addEventListener('click', () => redirigirA('operativo'));
+
+// Enter en campos
+clave.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter' && !btnDeteccion.disabled) {
+    redirigirA('deteccion');
+  }
+});
+
+// Inicializar
+cargarANPs();
+});
+</script>
+
+</body>
+</html>
