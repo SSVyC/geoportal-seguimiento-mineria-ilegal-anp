@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>REPORTE DE DETECCIÓN DE MINERÍA ILEGAL</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- Leaflet (MAPA GENERAL) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Proj4js (WGS84 <-> UTM) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
+
+  <style>
+    :root{
+      --ink:#0b1220; --muted:#475569; --line:#e2e8f0; --bg:#ffffff;
+    }
+    body{ margin:0; font-family: Arial, sans-serif; background:#f8fafc; color:var(--ink); }
+    .page{
+      max-width: 980px; margin: 22px auto; background:var(--bg);
+      border:1px solid var(--line); border-radius:12px; padding:18px 22px 22px;
+    }
+
+    /* ===== Encabezado con logos (MISMO TAMAÑO del Word) =====
+       En el Word el banner quedó aprox: 75.6mm de ancho.
+       Mantengo ese ancho fijo para que imprima igual.
+    */
+    .header{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:12px; padding-bottom:10px; border-bottom:1px solid var(--line);
+    }
+    .logos{
+      width: 75.6mm; height: auto; /* <- clave: mismo tamaño */
+      display:block;
+    }
+    .header-right{
+      text-align:right; flex: 1;
+    }
+    .report-title{
+      font-size: 13.5px; font-weight: 800; margin:0;
+      letter-spacing: .2px; text-transform: uppercase;
+    }
+    .report-sub{
+      margin-top:4px; font-size:11.5px; color:var(--muted);
+    }
+
+    .top-actions{
+      display:flex; gap:8px; justify-content:flex-end; margin-top:10px;
+    }
+    .btn{
+      border:1px solid var(--line); background:#0f172a; color:#fff;
+      padding:9px 12px; border-radius:10px; cursor:pointer; font-weight:800; font-size:12px;
+    }
+    .btn.secondary{ background:#334155; }
+
+    h2{ font-size:12.8px; margin:14px 0 8px; }
+    .muted{ color:var(--muted); font-size:11.5px; }
+
+    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .box{ border:1px solid var(--line); border-radius:10px; padding:10px; }
+    .k{ font-size:11px; color:var(--muted); margin-bottom:3px; }
+    .v{ font-size:12.5px; font-weight:800; }
+    .v.normal{ font-weight:600; white-space:pre-wrap; }
+
+    table{ width:100%; border-collapse:collapse; margin-top:8px; }
+    th, td{ border:1px solid var(--line); padding:7px; font-size:11.5px; vertical-align:top; }
+    th{ background:#f8fafc; text-align:left; }
+
+    .hr{ border-top:1px solid var(--line); margin:14px 0; }
+
+    /* ===== Mapa general ===== */
+    .map-title{ margin:10px 0 6px; font-size:12px; font-weight:800; }
+    #map{
+      height: 360px; border:1px solid var(--line); border-radius:10px; overflow:hidden;
+      background:#f1f5f9;
+    }
+
+    /* ===== Impresión ===== */
+    @media print{
+      body{ background:#fff; }
+      .page{ margin:0; border:none; border-radius:0; padding:0; }
+      .top-actions{ display:none; }
+      #map{ height: 320px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+
+    <!-- ENCABEZADO (logos + título) -->
+    <div class="header">
+      <!-- OJO: crea assets/logos_header.jpg en tu repo -->
+      <img class="logos" src="assets/logos_header.jpg" alt="Logos institucionales">
+
+      <div class="header-right">
+        <p class="report-title" id="repTitle">REPORTE DE DETECCIÓN DE MINERÍA ILEGAL - [ANP]</p>
+        <div class="report-sub" id="repSub">Cargando…</div>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <button class="btn secondary" onclick="window.close()">Cerrar</button>
+      <button class="btn" onclick="window.print()">Imprimir / Guardar PDF</button>
+    </div>
+
+    <h2>1. Datos del evento</h2>
+    <div class="grid">
+      <div class="box">
+        <div class="k">ANP</div>
+        <div class="v" id="anpNombre">—</div>
+        <div class="muted" id="anpCod">—</div>
+      </div>
+
+      <div class="box">
+        <div class="k">Código de detección (dete_id)</div>
+        <div class="v" id="deteId">—</div>
+      </div>
+
+      <div class="box">
+        <div class="k">Fecha de detección</div>
+        <div class="v" id="fechaDete">—</div>
+      </div>
+
+      <div class="box">
+        <div class="k">Fuente</div>
+        <div class="v" id="fuenteDete">—</div>
+      </div>
+
+      <div class="box" style="grid-column:1 / -1;">
+        <div class="k">Observación del evento</div>
+        <div class="v normal" id="obsDete">—</div>
+      </div>
+    </div>
+
+    <h2>2. Ubicaciones registradas</h2>
+    <div class="muted">Relación consolidada de puntos detectados durante el evento.</div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:44px;">N°</th>
+          <th style="width:140px;">ubic_id</th>
+          <th style="width:110px;">Zona UTM (WGS84)</th>
+          <th style="width:120px;">Este (m)</th>
+          <th style="width:120px;">Norte (m)</th>
+        </tr>
+      </thead>
+      <tbody id="tblUbic">
+        <tr><td colspan="6" class="muted">Cargando…</td></tr>
+      </tbody>
+    </table>
+
+    <div class="map-title">MAPA GENERAL DE UBICACIONES</div>
+    <div class="muted">(Inserción automática del mapa con todos los puntos detectados dentro del ANP)</div>
+    <div style="height:8px;"></div>
+    <div id="map"></div>
+
+    <h2>3. Componentes registrados</h2>
+    <div class="muted">Resumen de componentes por ubicación.</div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:140px;">ubic_id</th>
+          <th>Tipo de componente</th>
+          <th style="width:100px;">Cantidad</th>
+          <th>Observación</th>
+        </tr>
+      </thead>
+      <tbody id="tblComp">
+        <tr><td colspan="4" class="muted">Cargando…</td></tr>
+      </tbody>
+    </table>
+
+    <h2>4. Cierre</h2>
+    <div class="grid">
+      <div class="box">
+        <div class="k">Fecha de emisión</div>
+        <div class="v" id="fecEmision">—</div>
+      </div>
+      <div class="box">
+        <div class="k">Elaborado por</div>
+        <div class="v" id="elaboradoPor">—</div>
+      </div>
+    </div>
+
+    <div class="hr"></div>
+    <div class="muted">Generado desde el Geoportal. Fecha/hora de generación: <span id="genTime"></span></div>
+  </div>
+
+<script>
+(function(){
+  /* ===== Supabase (igual a tus HTML) ===== */
+  const SUPABASE_URL = "https://tewrzarmckrztcrmgfjo.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRld3J6YXJtY2tyenRjcm1nZmpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE0ODQ3NTksImV4cCI6MjA3NzA2MDc1OX0.xeQnYEVAV_eIy7zVxFU9W2Fd0xjuF4v-tQjM2REPtCc";
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const $ = (id)=>document.getElementById(id);
+  const esc = (s)=>String(s ?? "").replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  function qparam(name){ return (new URL(window.location.href)).searchParams.get(name) || ""; }
+
+  /* ===== UTM helpers ===== */
+  function utmZoneFromLon(lon){ return Math.floor((lon + 180) / 6) + 1; }
+  function lonLatToUTM(lon, lat){
+    if(!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+    const zone = utmZoneFromLon(lon);
+    const hemi = (lat < 0) ? "S" : "N";
+    const utmDef = `+proj=utm +zone=${zone} ${lat < 0 ? "+south" : ""} +datum=WGS84 +units=m +no_defs`;
+    try{
+      const res = proj4("EPSG:4326", utmDef, [lon, lat]);
+      return { zona: `${zone}${hemi}`, este: res[0], norte: res[1] };
+    }catch(e){
+      return null;
+    }
+  }
+  function coordFromGeom(geom){
+    try{
+      if(!geom) return null;
+      if(typeof geom === "string"){
+        const m = geom.match(/POINT\(([-\d.]+)\s+([-\d.]+)\)/i);
+        if(m) return { lon: Number(m[1]), lat: Number(m[2]) };
+      }
+      if(geom.type === "Point" && Array.isArray(geom.coordinates)){
+        return { lon: geom.coordinates[0], lat: geom.coordinates[1] };
+      }
+    }catch(e){}
+    return null;
+  }
+
+  /* ===== Mapa ===== */
+  let map, layerPts, layerAnp;
+
+  function initMap(){
+    map = L.map("map", { zoomControl:false, attributionControl:false, maxZoom:17 });
+
+    L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 17 }
+    ).addTo(map);
+
+    layerPts = L.layerGroup().addTo(map);
+    layerAnp = L.geoJSON(null, { style:{ color:"#00ffff", weight:2, fill:false } }).addTo(map);
+
+    // Vista inicial Perú
+    const peruBounds = L.latLngBounds(L.latLng(-18.35, -81.35), L.latLng(-0.03, -68.65));
+    map.fitBounds(peruBounds, { padding:[10,10] });
+  }
+
+  function fitToData(boundsList){
+    const valid = boundsList.filter(b => b && b.isValid && b.isValid());
+    if(!valid.length) return;
+    let b = valid[0];
+    for(let i=1;i<valid.length;i++) b = b.extend(valid[i]);
+    map.fitBounds(b, { padding:[10,10], maxZoom: 15 });
+  }
+
+  /* ===== Queries ===== */
+  async function getEvento(dete_id){
+    const { data, error } = await sb
+      .from("deteccion_evento")
+      .select("dete_id, anp_cod, usuario_creacion, fecha_dete, fuente_dete, obs_dete")
+      .eq("dete_id", dete_id)
+      .maybeSingle();
+    if(error) throw error;
+    return data;
+  }
+
+  async function getANPInfo(anp_cod){
+    // Intento vista
+    let r = await sb.from("v_anp_selector")
+      .select("anp_cod, anp_nomb, extent_geojson")
+      .eq("anp_cod", anp_cod)
+      .maybeSingle();
+
+    if(!r.error && r.data) return r.data;
+
+    // Fallback tabla base
+    r = await sb.from("anp_mineria_ilegal")
+      .select("anp_cod, anp_nomb, geom")
+      .eq("anp_cod", anp_cod)
+      .maybeSingle();
+
+    if(r.error) return { anp_cod };
+    return r.data || { anp_cod };
+  }
+
+  async function getANPGeom(anp_cod){
+    const { data, error } = await sb
+      .from("anp_mineria_ilegal")
+      .select("geom")
+      .eq("anp_cod", anp_cod)
+      .maybeSingle();
+    if(error) return null;
+    return data?.geom || null;
+  }
+
+  async function getUbicaciones(dete_id){
+    // Preferimos vista si existe
+    let r = await sb
+      .from("deteccion_view_ubicacion")
+      .select("ubic_id, geom, fuente_desc, fecha_dete")
+      .eq("dete_id", dete_id);
+
+    if(r.error){
+      // Fallback tabla
+      r = await sb
+        .from("deteccion_ubicacion")
+        .select("ubic_id, geom, latitud, longitud")
+        .eq("dete_id", dete_id);
+    }
+    if(r.error) throw r.error;
+    return r.data || [];
+  }
+
+  async function getComponentesByDete(dete_id){
+    // Preferimos vista si existe
+    let r = await sb
+      .from("deteccion_view_componente")
+      .select("ubic_id, tipo_desc, num_comp, obs_componente")
+      .eq("dete_id", dete_id);
+
+    if(r.error){
+      // Fallback tabla
+      r = await sb
+        .from("deteccion_componente")
+        .select("ubic_id, tipo_comp, num_comp, obs_componente")
+        .eq("dete_id", dete_id);
+    }
+    if(r.error) throw r.error;
+    return r.data || [];
+  }
+
+  /* ===== Render ===== */
+  function renderUbicTable(ubics){
+    const tb = $("tblUbic");
+    if(!ubics.length){
+      tb.innerHTML = `<tr><td colspan="5" class="muted">No hay ubicaciones registradas.</td></tr>`;
+      return;
+    }
+
+    tb.innerHTML = ubics.map((u, i)=>{
+      const cg = coordFromGeom(u.geom);
+      const lon = cg?.lon ?? (u.longitud!=null ? Number(u.longitud) : NaN);
+      const lat = cg?.lat ?? (u.latitud!=null ? Number(u.latitud) : NaN);
+
+      const utm = lonLatToUTM(lon, lat);
+      const zona = utm?.zona || "—";
+      const este = (utm?.este!=null) ? utm.este.toFixed(2) : "—";
+      const norte = (utm?.norte!=null) ? utm.norte.toFixed(2) : "—";
+      
+      return `
+        <tr>
+          <td>${i+1}</td>
+          <td>${esc(u.ubic_id)}</td>
+          <td>${esc(zona)}</td>
+          <td>${esc(este)}</td>
+          <td>${esc(norte)}</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  function renderCompTable(comps){
+    const tb = $("tblComp");
+    if(!comps.length){
+      tb.innerHTML = `<tr><td colspan="4" class="muted">No hay componentes registrados.</td></tr>`;
+      return;
+    }
+    tb.innerHTML = comps.map(r=>`
+      <tr>
+        <td>${esc(r.ubic_id)}</td>
+        <td>${esc(r.tipo_desc || r.tipo_comp || "")}</td>
+        <td>${esc(r.num_comp ?? "")}</td>
+        <td>${esc(r.obs_componente ?? "")}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderMap(anpGeom, ubics){
+    layerPts.clearLayers();
+    layerAnp.clearLayers();
+
+    const boundsList = [];
+
+    if(anpGeom){
+      try{
+        layerAnp.addData(anpGeom);
+        boundsList.push(L.geoJSON(anpGeom).getBounds());
+      }catch(e){}
+    }
+
+    ubics.forEach(u=>{
+      const c = coordFromGeom(u.geom);
+      if(!c) return;
+
+      const lat = c.lat, lon = c.lon;
+      if(!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+      const m = L.circleMarker([lat, lon], { radius:7, color:"#38bdf8", weight:2, fillOpacity:0.75 });
+      m.bindPopup(`<b>ubic_id:</b> ${esc(u.ubic_id)}`);
+      layerPts.addLayer(m);
+
+      boundsList.push(L.latLngBounds([lat, lon], [lat, lon]));
+    });
+
+    fitToData(boundsList);
+  }
+
+  async function main(){
+    $("genTime").textContent = new Date().toLocaleString();
+    initMap();
+
+    const dete_id = qparam("dete_id") || sessionStorage.getItem("last_dete_id") || "";
+    if(!dete_id){
+      $("repSub").textContent = "Falta parámetro dete_id (abre la ficha desde el módulo de Detección).";
+      $("tblUbic").innerHTML = `<tr><td colspan="6" class="muted">—</td></tr>`;
+      $("tblComp").innerHTML = `<tr><td colspan="4" class="muted">—</td></tr>`;
+      return;
+    }
+
+    const evento = await getEvento(dete_id);
+    if(!evento){
+      $("repSub").textContent = `No se encontró dete_id: ${dete_id}`;
+      return;
+    }
+
+    const anpInfo = await getANPInfo(evento.anp_cod);
+    const anpName = anpInfo?.anp_nomb || sessionStorage.getItem("anp_nombre") || evento.anp_cod || "ANP";
+
+    $("repTitle").textContent = `REPORTE DE DETECCIÓN DE MINERÍA ILEGAL - ${anpName}`;
+    $("repSub").textContent = `Código: ${dete_id}`;
+
+    $("anpNombre").textContent = anpName;
+    $("anpCod").textContent = evento.anp_cod ? `Código ANP: ${evento.anp_cod}` : "—";
+    $("deteId").textContent = evento.dete_id || "—";
+    $("fechaDete").textContent = evento.fecha_dete || "—";
+    $("fuenteDete").textContent = evento.fuente_dete || "—";
+    $("obsDete").textContent = evento.obs_dete || "—";
+
+    $("fecEmision").textContent = new Date().toLocaleDateString();
+    $("elaboradoPor").textContent = evento.usuario_creacion || "—";
+
+    const ubics = await getUbicaciones(dete_id);
+    const comps = await getComponentesByDete(dete_id);
+
+    renderUbicTable(ubics);
+    renderCompTable(comps);
+
+    const anpGeom = await getANPGeom(evento.anp_cod);
+    renderMap(anpGeom, ubics);
+
+    // ✅ Auto-imprimir si viene ?autoprint=1
+    const autoprint = qparam("autoprint");
+    if (autoprint === "1") {
+      setTimeout(() => window.print(), 350);
+    }
+  }
+
+  main().catch(err=>{
+    $("repSub").textContent = "Error cargando el reporte";
+    $("tblUbic").innerHTML = `<tr><td colspan="6" class="muted">${esc(err?.message || err)}</td></tr>`;
+    $("tblComp").innerHTML = `<tr><td colspan="4" class="muted">—</td></tr>`;
+  });
+})();
+</script>
+</body>
+</html>
