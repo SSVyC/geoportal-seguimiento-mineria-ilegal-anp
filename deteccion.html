@@ -162,6 +162,7 @@
 
     <button id="finalizarUbicacionBtn" class="tertiary" disabled>Finalizar ubicación</button>
     <button id="cerrarEventoBtn" class="tertiary" disabled>Cerrar evento</button>
+    <button id="imprimirReporteBtn" class="secondary" disabled>Imprimir reporte</button>
 
     <div class="pill" id="contadorPuntos">Ubicaciones: 0 | Componentes: 0</div>
     <div id="msg" class="msg"></div>
@@ -184,7 +185,7 @@ const Utils = {
       'lat', 'lng', 'utmZona', 'utmE', 'utmN',
       'tipoComp', 'numComp', 'obsPunto',
       'saveEventoBtn', 'saveUbicacionBtn', 'nuevaUbicacionBtn',
-      'addPuntoBtn', 'finalizarUbicacionBtn', 'cerrarEventoBtn',
+      'addPuntoBtn', 'finalizarUbicacionBtn', 'cerrarEventoBtn', 'imprimirReporteBtn',
       'anpSelect'
     ];
     
@@ -534,7 +535,7 @@ const UIManager = {
   },
 
   updateBotonesEstado() {
-    const { saveUbicacionBtn, nuevaUbicacionBtn, tipoComp, numComp, obsPunto, addPuntoBtn, finalizarUbicacionBtn, cerrarEventoBtn } = Utils.DOM;
+    const { saveUbicacionBtn, nuevaUbicacionBtn, tipoComp, numComp, obsPunto, addPuntoBtn, finalizarUbicacionBtn, cerrarEventoBtn, imprimirReporteBtn } = Utils.DOM;
     
     const hayEventoActivo = AppState.get('eventoGuardado') && !AppState.get('eventoCerrado');
     const latv = CoordUtils.parse(Utils.DOM.lat.value);
@@ -553,6 +554,7 @@ const UIManager = {
     finalizarUbicacionBtn.disabled = !hayUbicActiva;
     
     cerrarEventoBtn.disabled = !(AppState.get('eventoGuardado') && !AppState.get('eventoCerrado'));
+    imprimirReporteBtn.disabled = !AppState.get('eventoCerrado') || !Utils.DOM.deteId.value;
   },
 
   updateUTMDisplay() {
@@ -936,8 +938,23 @@ const App = {
 
   setupEventListeners() {
     const { anpSelect, saveEventoBtn, saveUbicacionBtn, nuevaUbicacionBtn, 
-            addPuntoBtn, finalizarUbicacionBtn, cerrarEventoBtn, lat, lng, 
+            addPuntoBtn, finalizarUbicacionBtn, cerrarEventoBtn, imprimirReporteBtn, lat, lng, 
             utmZona, utmE, utmN } = Utils.DOM;
+imprimirReporteBtn.onclick = () => {
+  const dete_id = (Utils.DOM.deteId.value || "").trim();
+  if (!dete_id) {
+    Utils.msg("Primero guarda el evento para generar el reporte.", true);
+    return;
+  }
+
+  // Para que el reporte pueda leerlo también por sessionStorage (backup)
+  const anpNombre = Utils.DOM.anpSelect?.selectedOptions?.[0]?.textContent?.trim() || "";
+  sessionStorage.setItem("last_dete_id", dete_id);
+  if (anpNombre) sessionStorage.setItem("anp_nombre", anpNombre);
+
+  // Abre el reporte e imprime automáticamente
+  window.open(`reporte_deteccion.html?dete_id=${encodeURIComponent(dete_id)}&autoprint=1`, "_blank");
+};
 
     // Evento cambio ANP
     anpSelect.addEventListener("change", (e) => this.handleANPChange(e));
