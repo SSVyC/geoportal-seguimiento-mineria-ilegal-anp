@@ -187,6 +187,7 @@
 
     <button id="finalizeUbicBtn" class="ghost">Finalizar ubicación</button>
     <button id="closeEventBtn" class="tertiary">Cerrar evento</button>
+    <button id="printReportBtn" class="secondary" disabled>Imprimir reporte</button>
 
     <div id="msg" class="msg"></div>
   </aside>
@@ -400,6 +401,16 @@ let currentUbicId = null;
 let instCache = [];   // lista local de instituciones agregadas
 let compCache = [];   // lista local de componentes agregados para la ubicación activa
 
+// ===== Reporte imprimible (solo cuando el evento esté cerrado) =====
+const printReportBtn = $("printReportBtn");
+let operaCerrado = false;
+let lastClosedOperaId = null;
+
+function updatePrintBtn(){
+  // Solo habilita si el evento está cerrado y tenemos el opera_id cerrado
+  printReportBtn.disabled = !(operaCerrado && lastClosedOperaId);
+}
+
 /* ================== CARGA ANP (selector + polígono) ================== */
 async function cargarANP(){
   try{
@@ -608,6 +619,10 @@ anpSelect.addEventListener("change", async ()=>{
   $("saveOperaBtn").disabled = false;
   renderInst(); renderComp();
   ubicacionesLayer.clearLayers();
+  // ✅ Reset del estado del reporte (al cambiar ANP)
+  operaCerrado = false;
+  lastClosedOperaId = null;
+  updatePrintBtn();
 
   if(!anpCod){
     operaId.value = "";
@@ -693,6 +708,10 @@ $("saveOperaBtn").onclick = async ()=>{
   }
 
   currentOperaId = result.payload.opera_id;
+  // ✅ Guardado NO significa cerrado
+  operaCerrado = false;
+  lastClosedOperaId = null;
+  updatePrintBtn();
 
   if(instCache.length){
     const rows = instCache.map(r=>({ opera_id: currentOperaId, ...r }));
@@ -979,6 +998,15 @@ $("closeEventBtn").onclick = async ()=>{
   instCache = [];
   renderInst();
 
+  // ✅ Capturar el opera_id cerrado (para imprimir)
+  const idToPrint = currentOperaId || (operaId.value || null);
+  operaCerrado = true;
+  lastClosedOperaId = idToPrint;
+
+  if (idToPrint) sessionStorage.setItem("last_opera_id", idToPrint);
+
+  updatePrintBtn();
+
   currentOperaId = null;
 
   fechaInicioOpera.value = "";
@@ -1001,6 +1029,19 @@ $("closeEventBtn").onclick = async ()=>{
   }
 
   msg("Evento cerrado. Puedes iniciar un nuevo operativo.");
+};
+/* Imprimir reporte (solo si el evento está cerrado) */
+printReportBtn.onclick = ()=>{
+  if(!(operaCerrado && lastClosedOperaId)){
+    msg("Primero cierra el evento para habilitar el reporte.", true);
+    return;
+  }
+
+  window.open(
+    `reporte_operativo.html?opera_id=${encodeURIComponent(lastClosedOperaId)}`,
+    "_blank",
+    "noopener"
+  );
 };
 
 /* ================== INIT ================== */
